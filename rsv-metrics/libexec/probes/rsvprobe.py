@@ -329,7 +329,7 @@ STATUS_VAL_LIST = STATUS_DICT.values()
 
 DEFAULT_ECODE = -2
 
-class RSVProbe:
+class RSVProbe(object):
   """Base class for RSV probes. Probes are executables performing tests and returning a specific output.
 A single probe can run multiple tests, metrics.
 Possible output statuses are: 
