@@ -1,0 +1,147 @@
+#!/usr/bin/python
+
+import os
+import re
+import sys
+
+sys.path.append("/usr/libexec/rsv/probes")
+
+import rsvprobe
+import htcondor
+
+SPLIT_RE = re.compile(",?\s*")
+
+os.environ['CONDOR_CONFIG'] = '/etc/condor-cron/condor_config'
+
+class GridEx(rsvprobe.RSVProbe):
+
+    """
+    Probe which queries a given glideinWMS factory and submits
+    further probes to RSV based on the defined entry points in
+    the factory.
+    """
+
+    def __init__(self):
+        super(GridEx, self).__init__(self)
+        self.metric = ""
+        metric = rsvprobe.RSVMetric("GRIDEX", "org.osg.gridex", rsvprobe.RSVMetric.STATUS)
+        metric.service_version = ">= GRIDEX 1.0.0"
+        metric.probe_type = "GRIDEX"
+        self.supported_metrics = [metric]
+        self.details = "---\n"
+
+        self.addopt("", "child-metric", "Metric to be run by the child GridEx probe.")
+        self.addopt("", "factories", "A comma-separated list of factories to query.")
+        self.addopt("", "constraint", "A constraint for querying factory entries.")
+        self.addopt("", "interval", "Interval, in minutes, between child probe submits")
+        self.addopt("", "concurrency", "Concurrency limit on the number of jobs for this metric (default: 1)")
+        self.addopt("", "pool", "HTCondor collector endpoint")
+        self.addopt("", "name", "HTCondor schedd name")
+
+        self.child = None
+        self.factories = None
+        self.constraint = "true"
+        self.interval = None
+        self.concurrency = None
+        self.pool = None
+        self.name = None
+
+    def parseopt(self):
+
+        options, optlist, remainder = super(GridEx, self).parseopt()
+
+        # Ugh.  getopt.
+        for opt, val in options
+            if opt == "child-metric":
+                self.child = val
+            elif opt == "factories":
+                self.factories = SPILT_RE.split(val)
+            elif opt == "constraint":
+                self.constraint = val
+            elif opt == "interval":
+                try:
+                    self.interval = int(val)
+                    if self.interval < 0: raise ValueError("Value must be positive")
+                except ValueError, ve:
+                    return self.return_unknown("Invalid integer for --interval: %s" % str(ve))
+            elif opt == "concurrency":
+                try:
+                    self.concurrency = int(val)
+                    if self.concurrency < 0: raise ValueError("Value must be positive")
+                except ValueError, ve:
+                    return self.return_unknown("Invalid integer for --concurrency: %s" % str(ve))
+            elif opt == "pool":
+                self.pool = val
+            elif opt == "name":
+                self.name = val
+            else:
+                return self.return_unknown("Unknown argument to GridEx probe: %s" % opt)
+
+        if not self.factories:
+            return self.return_unknown("Argument --factories must be specified")
+        self.factories = SPLIT_RE.split(self.factories)
+
+        self.constraint = htcondor.ExprTree(self.constraint)
+
+    def getCurrentHosts(self):
+        schedd = htcondor.Schedd()
+        hosts = []
+        filter = 'OSGRSVHost =!= UNDEFINED'
+        # String quoting trick - really, the wrappers need a `quote' function
+        tmpAd = classad.ClassAd(); tmpAd["foo"] = str(self.child)
+        filter += '(%s) && (OSGRSVMetric =?= %s)' % (filter, tmpAd.lookup("foo").__str__())
+        for ad in schedd.query(filter, ['OSGRSVMetric', 'OSGRSVHost']):
+            hosts.append(ad.eval('OSGRSVHost'))
+        return hosts
+
+
+    def getTargetHosts(self):
+        hosts = []
+        for factory in self.factories:
+            hosts += self.getTargetHostsFromFactory(factory)
+
+
+    def getTargetInfo(self, factory):
+        coll = htcondor.Collector(factory)
+        constraint = '(%s) && MyType =?= "glidefactory"' % self.constraint
+        ce_split_re = re.compile("\s*:?")
+        targetInfo = {}
+        for ad in coll.query(htcondor.AdTypes.Any, self.constraint, ['GLIDEIN_Gatekeeper', 'GLIDEIN_Site', 'EntryName']):
+            try:
+                info = targetInfo.setdefault(ce_split_re.split(ad['GLIDEIN_Gatekeeper']), [])
+            except:
+                continue
+            info.append(ad)
+        return targetInfo
+
+    def run(self):
+        """
+        Execute the probe
+        """
+        self.parseopt()
+
+        # Calculate hosts to add / remove
+        hosts = self.getCurrentHosts()
+        targets = self.getTargetInfo()
+        to_remove = []
+        for host in hosts:
+            if host not in targets:
+                to_remove.append(host)
+        to_add = []
+        for host in targets:
+            if host not in hosts:
+                to_add.append(host)
+
+        # Remove unnecessary metrics
+
+        # Add new metrics
+
+def main():
+    probe = GridEx()
+    probe.run()
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
+
