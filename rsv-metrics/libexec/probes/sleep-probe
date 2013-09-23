@@ -1,0 +1,65 @@
+#!/usr/bin/python2
+
+import os
+import re
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, '.')
+
+import rsvprobe
+
+class SleepProbe(rsvprobe.RSVProbe):
+    """ Sleep for configured amount of time.  For now, always return OK. """
+
+    # sleep_time = 10  # do we want to set a default?
+
+    def __init__(self):
+        rsvprobe.RSVProbe.__init__(self)
+        #super(SleepProbe, self).__init__(self)  # ???
+        self.metric = ""
+        metric = rsvprobe.RSVMetric("GRIDEX", "org.osg.sleep", rsvprobe.RSVMetric.STATUS)
+        metric.service_version = ">= GRIDEX 1.0.0"
+        metric.probe_type = "GRIDEX"
+        self.supported_metrics = [metric]
+        self.details = "---\n"
+
+        self.addopt("", "sleep-time", "Duration to sleep, in minutes")
+        self.sleep_time = None
+
+    def parseopt(self):
+
+        options, optlist, remainder = super(SleepProbe, self).parseopt()
+
+        for opt, val in options:
+            if opt == "sleep-time":
+                try:
+                    self.sleep_time = int(val)
+                    if self.sleep_time < 0: raise ValueError("Value must be positive")
+                except ValueError, ve:
+                    return self.return_unknown("Invalid integer for --sleep-time: %s" % str(ve))
+            else:
+                return self.return_unknown("Unknown argument to sleep probe: %s" % opt)
+
+        if self.sleep_time is None:
+            return self.return_unknown("Argument --sleep-time must be specified")
+
+
+    def run(self):
+        """Main routine for the probe"""
+        self.parseopt()
+        time.sleep(60 * self.sleep_time)
+
+        self.return_ok("Sleep successful.\n")
+
+
+def main():
+    probe = SleepProbe()
+    probe.run()
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
+
