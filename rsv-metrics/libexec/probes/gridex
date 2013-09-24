@@ -8,6 +8,7 @@ sys.path.append("/usr/libexec/rsv/probes")
 
 import rsvprobe
 import htcondor
+import classad
 
 SPLIT_RE = re.compile(",?\s*")
 
@@ -22,7 +23,7 @@ class GridEx(rsvprobe.RSVProbe):
     """
 
     def __init__(self):
-        super(GridEx, self).__init__(self)
+        super(GridEx, self).__init__()
         self.metric = ""
         metric = rsvprobe.RSVMetric("GRIDEX", "org.osg.gridex", rsvprobe.RSVMetric.STATUS)
         metric.service_version = ">= GRIDEX 1.0.0"
@@ -30,13 +31,13 @@ class GridEx(rsvprobe.RSVProbe):
         self.supported_metrics = [metric]
         self.details = "---\n"
 
-        self.addopt("", "child-metric", "Metric to be run by the child GridEx probe.")
-        self.addopt("", "factories", "A comma-separated list of factories to query.")
-        self.addopt("", "constraint", "A constraint for querying factory entries.")
-        self.addopt("", "interval", "Interval, in minutes, between child probe submits")
-        self.addopt("", "concurrency", "Concurrency limit on the number of jobs for this metric (default: 1)")
-        self.addopt("", "pool", "HTCondor collector endpoint")
-        self.addopt("", "name", "HTCondor schedd name")
+        self.addopt("", "child-metric=", "Metric to be run by the child GridEx probe.")
+        self.addopt("", "factories=", "A comma-separated list of factories to query.")
+        self.addopt("", "constraint=", "A constraint for querying factory entries.")
+        self.addopt("", "interval=", "Interval, in minutes, between child probe submits")
+        self.addopt("", "concurrency=", "Concurrency limit on the number of jobs for this metric (default: 1)")
+        self.addopt("", "pool=", "HTCondor collector endpoint")
+        self.addopt("", "name=", "HTCondor schedd name")
 
         self.child = None
         self.factories = None
@@ -51,37 +52,38 @@ class GridEx(rsvprobe.RSVProbe):
         options, optlist, remainder = super(GridEx, self).parseopt()
 
         # Ugh.  getopt.
-        for opt, val in options
-            if opt == "child-metric":
+        for opt, val in options:
+            if opt == "--child-metric":
                 self.child = val
-            elif opt == "factories":
-                self.factories = SPILT_RE.split(val)
-            elif opt == "constraint":
+            elif opt == "--factories":
+                self.factories = SPLIT_RE.split(val)
+            elif opt == "--constraint":
                 self.constraint = val
-            elif opt == "interval":
+            elif opt == "--interval":
                 try:
                     self.interval = int(val)
                     if self.interval < 0: raise ValueError("Value must be positive")
                 except ValueError, ve:
                     return self.return_unknown("Invalid integer for --interval: %s" % str(ve))
-            elif opt == "concurrency":
+            elif opt == "--concurrency":
                 try:
                     self.concurrency = int(val)
                     if self.concurrency < 0: raise ValueError("Value must be positive")
                 except ValueError, ve:
                     return self.return_unknown("Invalid integer for --concurrency: %s" % str(ve))
-            elif opt == "pool":
+            elif opt == "--pool":
                 self.pool = val
-            elif opt == "name":
+            elif opt == "--name":
                 self.name = val
             else:
                 return self.return_unknown("Unknown argument to GridEx probe: %s" % opt)
 
         if not self.factories:
             return self.return_unknown("Argument --factories must be specified")
-        self.factories = SPLIT_RE.split(self.factories)
 
-        self.constraint = htcondor.ExprTree(self.constraint)
+        if not self.constraint:
+            return self.return_unknown("Argument --constraint must be specified")
+        self.constraint = classad.ExprTree(self.constraint)
 
     def getCurrentHosts(self):
         schedd = htcondor.Schedd()
@@ -89,7 +91,8 @@ class GridEx(rsvprobe.RSVProbe):
         filter = 'OSGRSVHost =!= UNDEFINED'
         # String quoting trick - really, the wrappers need a `quote' function
         tmpAd = classad.ClassAd(); tmpAd["foo"] = str(self.child)
-        filter += '(%s) && (OSGRSVMetric =?= %s)' % (filter, tmpAd.lookup("foo").__str__())
+        filter = '(%s) && (OSGRSVMetric =?= %s)' % (filter, tmpAd.lookup("foo").__str__())
+        print filter
         for ad in schedd.query(filter, ['OSGRSVMetric', 'OSGRSVHost']):
             hosts.append(ad.eval('OSGRSVHost'))
         return hosts
