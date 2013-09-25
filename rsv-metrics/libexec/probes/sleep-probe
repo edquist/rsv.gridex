@@ -16,8 +16,7 @@ class SleepProbe(rsvprobe.RSVProbe):
     # sleep_time = 10  # do we want to set a default?
 
     def __init__(self):
-        rsvprobe.RSVProbe.__init__(self)
-        #super(SleepProbe, self).__init__(self)  # ???
+        super(SleepProbe, self).__init__()
         self.metric = ""
         metric = rsvprobe.RSVMetric("GRIDEX", "org.osg.sleep", rsvprobe.RSVMetric.STATUS)
         metric.service_version = ">= GRIDEX 1.0.0"
@@ -25,7 +24,7 @@ class SleepProbe(rsvprobe.RSVProbe):
         self.supported_metrics = [metric]
         self.details = "---\n"
 
-        self.addopt("", "sleep-time", "Duration to sleep, in minutes")
+        self.addopt("", "sleep-time=", "Duration to sleep, in minutes")
         self.sleep_time = None
 
     def parseopt(self):
@@ -33,7 +32,7 @@ class SleepProbe(rsvprobe.RSVProbe):
         options, optlist, remainder = super(SleepProbe, self).parseopt()
 
         for opt, val in options:
-            if opt == "sleep-time":
+            if opt == "--sleep-time":
                 try:
                     self.sleep_time = int(val)
                     if self.sleep_time < 0: raise ValueError("Value must be positive")
